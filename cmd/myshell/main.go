@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -28,13 +29,31 @@ func repl(in io.Reader, out io.Writer) error {
 		}
 		prompt := scanner.Text()
 		prompt = strings.TrimSpace(prompt)
-		fmt.Fprint(out, eval(prompt))
+		fmt.Fprintln(out, eval(prompt))
 	}
 }
 
 func eval(prompt string) string {
-	if strings.HasPrefix(prompt, "exit") {
-		os.Exit(0)
+	splits := strings.Split(prompt, " ")
+	if len(splits) == 0 {
+		return fmt.Sprintf("%s: command not found", prompt)
 	}
-	return fmt.Sprintf("%s: command not found\n", prompt)
+
+	switch splits[0] {
+	case "exit":
+		code := "0"
+		if len(splits) > 1 {
+			code = splits[1]
+		}
+		codeInt, err := strconv.ParseInt(code, 10, 64)
+		if err != nil {
+			return fmt.Sprintf("exit: %s: numeric argument required", code)
+		}
+		os.Exit(int(codeInt))
+	case "echo":
+		return strings.Join(splits[1:], " ")
+	default:
+		return fmt.Sprintf("%s: command not found", prompt)
+	}
+	return ""
 }
