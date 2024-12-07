@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Ensures gofmt doesn't remove the "fmt" import in stage 1 (feel free to remove this!)
@@ -26,10 +27,14 @@ func repl(in io.Reader, out io.Writer) error {
 			return scanner.Err()
 		}
 		prompt := scanner.Text()
+		prompt = strings.TrimSpace(prompt)
 		fmt.Fprint(out, eval(prompt))
 	}
 }
 
 func eval(prompt string) string {
+	if strings.HasPrefix(prompt, "exit") {
+		os.Exit(0)
+	}
 	return fmt.Sprintf("%s: command not found\n", prompt)
 }
