@@ -33,6 +33,12 @@ func repl(in io.Reader, out io.Writer) error {
 	}
 }
 
+var builtinCommands = map[string]bool{
+	"exit": true,
+	"echo": true,
+	"type": true,
+}
+
 func eval(prompt string) string {
 	splits := strings.Split(prompt, " ")
 	if len(splits) == 0 {
@@ -52,6 +58,16 @@ func eval(prompt string) string {
 		os.Exit(int(codeInt))
 	case "echo":
 		return strings.Join(splits[1:], " ")
+	case "type":
+		if len(splits) < 2 {
+			return fmt.Sprintf("type: usage: type name")
+		}
+
+		if _, ok := builtinCommands[splits[1]]; ok {
+			return fmt.Sprintf("%s is a shell builtin", splits[1])
+		} else {
+			return fmt.Sprintf("%s: not found", splits[1])
+		}
 	default:
 		return fmt.Sprintf("%s: command not found", prompt)
 	}
