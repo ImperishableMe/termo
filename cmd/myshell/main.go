@@ -74,11 +74,9 @@ func typeF(splits []string) string {
 	}
 
 	if _, ok := builtinCommands[splits[0]]; ok {
-		return fmt.Sprintf("%s is a shell builtin", splits[1])
+		return fmt.Sprintf("%s is a shell builtin", splits[0])
 	}
 	path := os.Getenv("PATH")
-	fmt.Fprintln(os.Stderr, "PATH:", path)
-
 	commandPaths := strings.Split(path, string(os.PathListSeparator))
 
 	for _, commandPath := range commandPaths {
