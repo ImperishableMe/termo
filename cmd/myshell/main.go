@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,7 +64,16 @@ func eval(prompt string) string {
 	case "type":
 		return typeF(splits[1:])
 	default:
-		return fmt.Sprintf("%s: command not found", prompt)
+		ok := cmdExists(splits[0])
+		if !ok {
+			return fmt.Sprintf("%s: command not found", splits[0])
+		}
+		cmd := exec.Command(splits[0], splits[1:]...)
+		output, err := cmd.Output()
+		if err != nil {
+			return fmt.Sprintf("%s: %v", splits[0], err)
+		}
+		return string(output)
 	}
 	return ""
 }
@@ -91,4 +101,9 @@ func typeF(splits []string) string {
 func fileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return !errors.Is(err, os.ErrNotExist)
+}
+
+func cmdExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
 }
