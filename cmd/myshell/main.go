@@ -73,7 +73,7 @@ func eval(prompt string) string {
 		if err != nil {
 			return fmt.Sprintf("%s: %v", splits[0], err)
 		}
-		return string(output)
+		return strings.TrimRight(string(output), "\n\r")
 	}
 	return ""
 }
