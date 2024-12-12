@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -59,17 +61,36 @@ func eval(prompt string) string {
 	case "echo":
 		return strings.Join(splits[1:], " ")
 	case "type":
-		if len(splits) < 2 {
-			return fmt.Sprintf("type: usage: type name")
-		}
-
-		if _, ok := builtinCommands[splits[1]]; ok {
-			return fmt.Sprintf("%s is a shell builtin", splits[1])
-		} else {
-			return fmt.Sprintf("%s: not found", splits[1])
-		}
+		return typeF(splits[1:])
 	default:
 		return fmt.Sprintf("%s: command not found", prompt)
 	}
 	return ""
+}
+
+func typeF(splits []string) string {
+	if len(splits) < 1 {
+		return fmt.Sprintf("type: usage: type name")
+	}
+
+	if _, ok := builtinCommands[splits[0]]; ok {
+		return fmt.Sprintf("%s is a shell builtin", splits[1])
+	}
+	path := os.Getenv("PATH")
+	fmt.Fprintln(os.Stderr, "PATH:", path)
+
+	commandPaths := strings.Split(path, string(os.PathListSeparator))
+
+	for _, commandPath := range commandPaths {
+		filePath := filepath.Join(commandPath, splits[0])
+		if fileExists(filePath) {
+			return fmt.Sprintf("%s is %s", splits[0], filePath)
+		}
+	}
+	return fmt.Sprintf("%s: not found", splits[0])
+}
+
+func fileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return !errors.Is(err, os.ErrNotExist)
 }
