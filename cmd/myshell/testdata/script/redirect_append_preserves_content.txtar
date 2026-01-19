@@ -1,0 +1,14 @@
+# Test >> preserves existing content
+exec sh -c 'echo existing > output.txt'
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo appended >> output.txt
+exit
+
+-- expected.txt --
+existing
+appended

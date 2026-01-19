@@ -70,6 +70,17 @@ func parseRedirections(args []string) ([]string, Redirection, error) {
 			}
 			redir.Stdout = file
 			i++ // skip the filename
+		case ">>", "1>>":
+			if i+1 >= len(args) {
+				return nil, redir, fmt.Errorf("syntax error: expected filename after %s", arg)
+			}
+			filePath := args[i+1]
+			file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				return nil, redir, fmt.Errorf("cannot open %s: %v", filePath, err)
+			}
+			redir.Stdout = file
+			i++ // skip the filename
 		case "2>":
 			if i+1 >= len(args) {
 				return nil, redir, fmt.Errorf("syntax error: expected filename after %s", arg)

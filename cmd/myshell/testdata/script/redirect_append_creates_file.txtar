@@ -1,0 +1,12 @@
+# Test >> creates file if it doesn't exist
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo hello >> output.txt
+exit
+
+-- expected.txt --
+hello

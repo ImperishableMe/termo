@@ -1,0 +1,16 @@
+# Test multiple >> operations
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo line1 >> output.txt
+echo line2 >> output.txt
+echo line3 >> output.txt
+exit
+
+-- expected.txt --
+line1
+line2
+line3

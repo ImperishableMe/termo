@@ -1,0 +1,14 @@
+# Test 1>> operator works like >>
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo first > output.txt
+echo second 1>> output.txt
+exit
+
+-- expected.txt --
+first
+second
