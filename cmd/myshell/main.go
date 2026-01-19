@@ -2,18 +2,13 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
-
-// Ensures gofmt doesn't remove the "fmt" import in stage 1 (feel free to remove this!)
-var _ = fmt.Fprint
 
 func main() {
 	if err := repl(os.Stdin, os.Stdout); err != nil {
@@ -32,75 +27,148 @@ func repl(in io.Reader, out io.Writer) error {
 		}
 		prompt := scanner.Text()
 		prompt = strings.TrimSpace(prompt)
-		fmt.Fprintln(out, eval(prompt))
+		output, exitCode, shouldExit := eval(prompt)
+		if output != "" {
+			fmt.Fprintln(out, output)
+		}
+		if shouldExit {
+			os.Exit(exitCode)
+		}
 	}
 }
 
-var builtinCommands = map[string]bool{
-	"exit": true,
-	"echo": true,
-	"type": true,
+// BuiltinFunc is the signature for all builtin commands
+// Returns: output string, exit code, and whether to exit the shell
+type BuiltinFunc func(args []string) (output string, exitCode int, shouldExit bool)
+
+var builtinCommands map[string]BuiltinFunc
+
+func init() {
+	builtinCommands = map[string]BuiltinFunc{
+		"exit": builtinExit,
+		"echo": builtinEcho,
+		"type": builtinType,
+	}
 }
 
-func eval(prompt string) string {
+func builtinExit(args []string) (string, int, bool) {
+	code := 0
+	if len(args) > 0 {
+		codeInt, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return fmt.Sprintf("exit: %s: numeric argument required", args[0]), 2, true
+		}
+		code = int(codeInt)
+	}
+	return "", code, true
+}
+
+func builtinEcho(args []string) (string, int, bool) {
+	return strings.Join(args, " "), 0, false
+}
+
+func builtinType(args []string) (string, int, bool) {
+	if len(args) < 1 {
+		return "type: usage: type name", 1, false
+	}
+
+	if _, ok := builtinCommands[args[0]]; ok {
+		return fmt.Sprintf("%s is a shell builtin", args[0]), 0, false
+	}
+
+	if path, err := exec.LookPath(args[0]); err == nil {
+		return fmt.Sprintf("%s is %s", args[0], path), 0, false
+	}
+	return fmt.Sprintf("%s: not found", args[0]), 1, false
+}
+
+func eval(prompt string) (output string, exitCode int, shouldExit bool) {
 	splits := strings.Split(prompt, " ")
 	if len(splits) == 0 {
-		return fmt.Sprintf("%s: command not found", prompt)
+		return fmt.Sprintf("%s: command not found", prompt), 127, false
 	}
 
-	switch splits[0] {
-	case "exit":
-		code := "0"
-		if len(splits) > 1 {
-			code = splits[1]
-		}
-		codeInt, err := strconv.ParseInt(code, 10, 64)
-		if err != nil {
-			return fmt.Sprintf("exit: %s: numeric argument required", code)
-		}
-		os.Exit(int(codeInt))
-	case "echo":
-		return strings.Join(splits[1:], " ")
-	case "type":
-		return typeF(splits[1:])
-	default:
-		ok := cmdExists(splits[0])
-		if !ok {
-			return fmt.Sprintf("%s: command not found", splits[0])
-		}
-		cmd := exec.Command(splits[0], splits[1:]...)
-		output, err := cmd.Output()
-		if err != nil {
-			return fmt.Sprintf("%s: %v", splits[0], err)
-		}
-		return strings.TrimRight(string(output), "\n\r")
+	cmd := splits[0]
+	args := splits[1:]
+
+	if handler, ok := builtinCommands[cmd]; ok {
+		return handler(args)
 	}
-	return ""
+
+	return RunCommand(splits)
 }
 
-func typeF(splits []string) string {
-	if len(splits) < 1 {
-		return fmt.Sprintf("type: usage: type name")
+func RunCommand(splits []string) (string, int, bool) {
+	type Redirection struct {
+		stdin  io.Reader
+		stdout io.Writer
+		stderr io.Writer
 	}
 
-	if _, ok := builtinCommands[splits[0]]; ok {
-		return fmt.Sprintf("%s is a shell builtin", splits[0])
-	}
-	path := os.Getenv("PATH")
-	commandPaths := strings.Split(path, string(os.PathListSeparator))
-
-	for _, commandPath := range commandPaths {
-		filePath := filepath.Join(commandPath, splits[0])
-		if fileExists(filePath) {
-			return fmt.Sprintf("%s is %s", splits[0], filePath)
+	getRedirection := func(command string) Redirection {
+		redirection := Redirection{
+			stdin:  os.Stdin,
+			stdout: os.Stdout,
+			stderr: os.Stderr,
 		}
-	}
-	return fmt.Sprintf("%s: not found", splits[0])
-}
 
-func fileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return !errors.Is(err, os.ErrNotExist)
+		splits := strings.Split(command, " ")
+
+		for i := 0; i+1 < len(splits); i++ {
+			split := splits[i]
+			switch split {
+			case "<":
+				filePath := splits[i+1]
+				file, err := os.Open(filePath)
+				if err != nil {
+					fmt.Println("Error creating file:", err)
+					return redirection
+				}
+				redirection.stdin = file
+
+			case ">", "1>":
+				filePath := splits[i+1]
+				file, err := os.Create(filePath)
+				if err != nil {
+					fmt.Println("Error creating file:", err)
+					return redirection
+				}
+				redirection.stdout = file
+			case "2>":
+				filePath := splits[i+1]
+				file, err := os.Create(filePath)
+				if err != nil {
+					fmt.Println("Error creating file:", err)
+					return redirection
+				}
+				redirection.stderr = file
+			default:
+				continue
+			}
+		}
+
+		return redirection
+	}
+
+	ok := cmdExists(splits[0])
+	if !ok {
+		return fmt.Sprintf("%s: command not found", splits[0]), 127, false
+	}
+	cmd := exec.Command(splits[0], splits[1:]...)
+	redirection := getRedirection(strings.Join(splits, " "))
+
+	cmd.Stdin = redirection.stdin
+	cmd.Stdout = redirection.stdout
+	cmd.Stderr = redirection.stderr
+
+	err := cmd.Run()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", exitErr.ExitCode(), false
+		}
+		return fmt.Sprintf("Cmd: %s: %v", splits[0], err), 1, false
+	}
+	return "", 0, false
 }
 
 func cmdExists(cmd string) bool {
