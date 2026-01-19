@@ -1,0 +1,11 @@
+# Binaries
+main
+/tmp/
+
+# IDE
+.idea/
+
+# Output files
+*.out
+out
+my_out.txt
