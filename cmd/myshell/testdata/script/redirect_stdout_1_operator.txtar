@@ -1,0 +1,12 @@
+# Test 1> operator (same as >)
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo Hello James 1> output.txt
+exit
+
+-- expected.txt --
+Hello James

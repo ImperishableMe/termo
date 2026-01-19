@@ -1,0 +1,10 @@
+# Test that stderr is NOT redirected by > (appears on terminal)
+stdin commands.txt
+exec myshell
+
+exists output.txt
+
+-- commands.txt --
+cat nonexistent > output.txt
+exit
+

@@ -1,0 +1,12 @@
+# Test builtin echo with multiple words redirected
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo foo bar baz > output.txt
+exit
+
+-- expected.txt --
+foo bar baz

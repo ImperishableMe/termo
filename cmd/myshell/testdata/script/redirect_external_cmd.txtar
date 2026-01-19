@@ -1,0 +1,15 @@
+# Test external command with redirection
+exec sh -c 'mkdir testdir && touch testdir/apple testdir/banana'
+
+stdin commands.txt
+exec myshell
+
+cmp listing.txt expected_listing.txt
+
+-- commands.txt --
+ls testdir > listing.txt
+exit
+
+-- expected_listing.txt --
+apple
+banana

@@ -41,6 +41,78 @@ func repl(in io.Reader, out io.Writer) error {
 // Returns: output string, exit code, and whether to exit the shell
 type BuiltinFunc func(args []string) (output string, exitCode int, shouldExit bool)
 
+// Redirection holds file handles for stdin/stdout/stderr redirection
+type Redirection struct {
+	Stdout *os.File
+	Stderr *os.File
+	Stdin  *os.File
+}
+
+// parseRedirections extracts redirection operators from args and returns:
+// - filtered args (without redirection operators and their targets)
+// - Redirection struct with opened file handles
+// Caller is responsible for closing the files.
+func parseRedirections(args []string) ([]string, Redirection, error) {
+	var filtered []string
+	redir := Redirection{}
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case ">", "1>":
+			if i+1 >= len(args) {
+				return nil, redir, fmt.Errorf("syntax error: expected filename after %s", arg)
+			}
+			filePath := args[i+1]
+			file, err := os.Create(filePath)
+			if err != nil {
+				return nil, redir, fmt.Errorf("cannot open %s: %v", filePath, err)
+			}
+			redir.Stdout = file
+			i++ // skip the filename
+		case "2>":
+			if i+1 >= len(args) {
+				return nil, redir, fmt.Errorf("syntax error: expected filename after %s", arg)
+			}
+			filePath := args[i+1]
+			file, err := os.Create(filePath)
+			if err != nil {
+				return nil, redir, fmt.Errorf("cannot open %s: %v", filePath, err)
+			}
+			redir.Stderr = file
+			i++ // skip the filename
+		case "<":
+			if i+1 >= len(args) {
+				return nil, redir, fmt.Errorf("syntax error: expected filename after %s", arg)
+			}
+			filePath := args[i+1]
+			file, err := os.Open(filePath)
+			if err != nil {
+				return nil, redir, fmt.Errorf("cannot open %s: %v", filePath, err)
+			}
+			redir.Stdin = file
+			i++ // skip the filename
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+
+	return filtered, redir, nil
+}
+
+// closeRedirections closes all open file handles in a Redirection struct
+func closeRedirections(redir Redirection) {
+	if redir.Stdout != nil {
+		redir.Stdout.Close()
+	}
+	if redir.Stderr != nil {
+		redir.Stderr.Close()
+	}
+	if redir.Stdin != nil {
+		redir.Stdin.Close()
+	}
+}
+
 var builtinCommands map[string]BuiltinFunc
 
 func init() {
@@ -91,87 +163,60 @@ func eval(prompt string) (output string, exitCode int, shouldExit bool) {
 	cmd := splits[0]
 	args := splits[1:]
 
-	if handler, ok := builtinCommands[cmd]; ok {
-		return handler(args)
+	// Parse redirections from args
+	filteredArgs, redir, err := parseRedirections(args)
+	defer closeRedirections(redir)
+
+	if err != nil {
+		return err.Error(), 1, false
 	}
 
-	return RunCommand(splits)
+	if handler, ok := builtinCommands[cmd]; ok {
+		output, exitCode, shouldExit = handler(filteredArgs)
+		// If stdout is redirected, write output to file instead of returning
+		if redir.Stdout != nil && output != "" {
+			fmt.Fprintln(redir.Stdout, output)
+			return "", exitCode, shouldExit
+		}
+		return output, exitCode, shouldExit
+	}
+
+	return runCommandWithRedirection(cmd, filteredArgs, redir)
 }
 
-func RunCommand(splits []string) (string, int, bool) {
-	type Redirection struct {
-		stdin  io.Reader
-		stdout io.Writer
-		stderr io.Writer
+// runCommandWithRedirection runs an external command with the given args and redirection
+func runCommandWithRedirection(cmdName string, args []string, redir Redirection) (string, int, bool) {
+	if _, err := exec.LookPath(cmdName); err != nil {
+		return fmt.Sprintf("%s: command not found", cmdName), 127, false
 	}
 
-	getRedirection := func(command string) Redirection {
-		redirection := Redirection{
-			stdin:  os.Stdin,
-			stdout: os.Stdout,
-			stderr: os.Stderr,
-		}
+	cmd := exec.Command(cmdName, args...)
 
-		splits := strings.Split(command, " ")
-
-		for i := 0; i+1 < len(splits); i++ {
-			split := splits[i]
-			switch split {
-			case "<":
-				filePath := splits[i+1]
-				file, err := os.Open(filePath)
-				if err != nil {
-					fmt.Println("Error creating file:", err)
-					return redirection
-				}
-				redirection.stdin = file
-
-			case ">", "1>":
-				filePath := splits[i+1]
-				file, err := os.Create(filePath)
-				if err != nil {
-					fmt.Println("Error creating file:", err)
-					return redirection
-				}
-				redirection.stdout = file
-			case "2>":
-				filePath := splits[i+1]
-				file, err := os.Create(filePath)
-				if err != nil {
-					fmt.Println("Error creating file:", err)
-					return redirection
-				}
-				redirection.stderr = file
-			default:
-				continue
-			}
-		}
-
-		return redirection
+	// Set up I/O redirection
+	if redir.Stdin != nil {
+		cmd.Stdin = redir.Stdin
+	} else {
+		cmd.Stdin = os.Stdin
 	}
 
-	ok := cmdExists(splits[0])
-	if !ok {
-		return fmt.Sprintf("%s: command not found", splits[0]), 127, false
+	if redir.Stdout != nil {
+		cmd.Stdout = redir.Stdout
+	} else {
+		cmd.Stdout = os.Stdout
 	}
-	cmd := exec.Command(splits[0], splits[1:]...)
-	redirection := getRedirection(strings.Join(splits, " "))
 
-	cmd.Stdin = redirection.stdin
-	cmd.Stdout = redirection.stdout
-	cmd.Stderr = redirection.stderr
+	if redir.Stderr != nil {
+		cmd.Stderr = redir.Stderr
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 
 	err := cmd.Run()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return "", exitErr.ExitCode(), false
 		}
-		return fmt.Sprintf("Cmd: %s: %v", splits[0], err), 1, false
+		return fmt.Sprintf("Cmd: %s: %v", cmdName, err), 1, false
 	}
 	return "", 0, false
-}
-
-func cmdExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
 }
