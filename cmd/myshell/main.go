@@ -113,6 +113,37 @@ func closeRedirections(redir Redirection) {
 	}
 }
 
+// parseArgs splits a command line into arguments, handling single-quoted strings.
+// Single quotes preserve literal text and are stripped from the output.
+func parseArgs(input string) []string {
+	var args []string
+	var current strings.Builder
+	inSingleQuote := false
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		switch {
+		case ch == '\'' && !inSingleQuote:
+			inSingleQuote = true
+		case ch == '\'' && inSingleQuote:
+			inSingleQuote = false
+		case ch == ' ' && !inSingleQuote:
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+
+	return args
+}
+
 var builtinCommands map[string]BuiltinFunc
 
 func init() {
@@ -155,7 +186,7 @@ func builtinType(args []string) (string, int, bool) {
 }
 
 func eval(prompt string) (output string, exitCode int, shouldExit bool) {
-	splits := strings.Split(prompt, " ")
+	splits := parseArgs(prompt)
 	if len(splits) == 0 {
 		return fmt.Sprintf("%s: command not found", prompt), 127, false
 	}

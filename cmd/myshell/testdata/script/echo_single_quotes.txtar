@@ -1,0 +1,12 @@
+# Test that single quotes are stripped from echo output
+stdin commands.txt
+exec myshell
+
+cmp output.txt expected.txt
+
+-- commands.txt --
+echo 'Hello James' > output.txt
+exit
+
+-- expected.txt --
+Hello James
